@@ -2,20 +2,19 @@
 
 > 🧠 **GenAI (RAG)** • 🐍 **FastAPI** • 🗃️ **PostgreSQL + pgvector** • 🔌 **LangChain + OpenAI** • 🐳 **Docker Compose** • 📨 **Celery + Redis** • 🔐 **API Key**
 
-A production-ready **RAG API** for asking questions about your own documents. Upload PDFs or text, the service chunks and embeds them into **Postgres/pgvector**, then answers queries with **LLM** responses **grounded** in retrieved context (with citations).
+A modern, production-ready **RAG API** for querying your own documents. Upload PDFs or text, the service chunks and embeds them into **Postgres/pgvector**, then answers questions with **LLM** responses grounded in retrieved context (with citations).
 
 ---
 
 ## ✨ Highlights
 
-* 🗃️ **PostgreSQL + pgvector** for vector search (one source of truth, easy backups)
-* 🐍 **FastAPI 0.116+** with OpenAPI docs (`/docs`, `/redoc`)
-* 🧱 **LangChain + OpenAI**: `text-embedding-3-small` (default) + chat model (configurable)
-* 🧩 **RAG pipeline**: chunking, embedding, ANN retrieval, citations
-* 📨 **Asynchroniczny ingest**: **Celery + Redis** (fallback sync w dev)
-* 🔐 **Proste auth**: `X-API-Key` header (opcjonalne w DEV)
-* 🧪 **Testy** (pytest + httpx) – rekomendowane
-* 🐳 **Docker + Compose**: jeden plik, jeden start
+* 🗃️ **PostgreSQL + pgvector** for vector search (single source of truth, easy backups)
+* 🐍 **FastAPI** with OpenAPI docs (`/docs`, `/redoc`)
+* 🔌 **LangChain + OpenAI**: `text-embedding-3-small` (default) + configurable chat model
+* 🧩 **RAG pipeline**: chunking, embeddings, ANN retrieval, citations
+* 📨 **Async ingestion**: **Celery + Redis** (sync fallback in dev)
+* 🔐 **Simple auth**: `X-API-Key` header (optional in dev)
+* 🐳 **Docker Compose**: one file, one command
 
 **API Docs:**
 
@@ -44,36 +43,36 @@ ai-docs-assistant-api/
 
 **RAG flow (high level):**
 
-1. `POST /v1/documents/upload` → ekstrakcja tekstu (PDF/UTF-8)
-2. **Ingest**: chunking → embeddings → zapis do `pgvector`
-3. `POST /v1/chat/query` → embed zapytania → ANN search → LLM answer + **citations**
+1. `POST /v1/documents/upload` → extract text (PDF/UTF-8)
+2. **Ingest**: chunking → embeddings → store in `pgvector`
+3. `POST /v1/chat/query` → embed question → ANN search → LLM answer + **citations**
 
 ---
 
 ## 🐳 Quick Start (Docker Compose)
 
-Wymagania: Docker, Docker Compose, klucz do OpenAI.
+Requirements: Docker, Docker Compose, an OpenAI API key.
 
 ```bash
-# 0) Kopia env
+# 0) Configure environment
 cp .env.example .env
-# Edytuj .env i ustaw OPENAI_API_KEY
+# edit .env and set OPENAI_API_KEY
 
 # 1) Build
 docker compose build
 
-# 2) Run (foreground albo -d)
+# 2) Run (foreground or -d)
 docker compose up
-# lub
+# or
 docker compose up -d
 
-# 3) Logs
+# 3) Tail logs
 docker compose logs -f api
 ```
 
-Endpoints po starcie:
+Endpoints after startup:
 
-* API (health): `http://localhost:8080/v1/health`
+* Health: `http://localhost:8080/v1/health`
 * Swagger UI: `http://localhost:8080/docs`
 
 Stop & clean:
@@ -83,21 +82,20 @@ docker compose down              # stop
 docker compose down -v           # stop + remove volumes (reset DB)
 ```
 
-> Zmieniłeś kod API?
+> Changed the API code?
 > `docker compose build api && docker compose up -d`
 
 ---
 
-## 🔐 Auth (proste)
+## 🔐 Auth
 
-Domyślnie używamy nagłówka `X-API-Key`. W DEV można pominąć (gdy `API_KEY` puste).
-Dodaj do żądań:
+By default the API expects `X-API-Key`. In dev you can leave it empty to disable auth.
 
 ```
 X-API-Key: dev-key-123
 ```
 
-(ustaw w `.env` swoją wartość)
+Configure in `.env`.
 
 ---
 
@@ -105,23 +103,23 @@ X-API-Key: dev-key-123
 
 ### Health
 
-* `GET /v1/health` → status serwisu i DB
+* `GET /v1/health` → service & DB status
 
 ### Documents
 
-* `POST /v1/documents/upload` (multipart `file`) → `{ document_id }`
-  *Automatycznie próbuje uruchomić ingest (Celery), w DEV spadnie do trybu synchronicznego, jeśli worker nie działa.*
-* `POST /v1/documents/{document_id}/ingest` → ręczne uruchomienie ingestu
+* `POST /v1/documents/upload` (multipart `file`) → `{ "document_id": "<UUID>" }`
+  *Automatically tries Celery ingestion; in dev falls back to sync if the worker is down.*
+* `POST /v1/documents/{document_id}/ingest` → force ingestion
 * `GET  /v1/documents/{document_id}/status` → `uploaded | processing | ready | failed`
 
 ### Retrieval (debug)
 
-* `GET /v1/chunks/search?q=...&top_k=5` → podgląd top-K chunków (zawartość + similarity)
+* `GET /v1/chunks/search?q=...&top_k=5` → preview top-K chunks (content + similarity)
 
 ### Chat (RAG)
 
-* `POST /v1/chat/query` → `{ answer, citations[] }`
-  Body:
+* `POST /v1/chat/query` → `{ "answer": "...", "citations": [...] }`
+  Request body:
 
   ```json
   {
@@ -137,9 +135,9 @@ X-API-Key: dev-key-123
 
 ## 🧰 Example cURL
 
-> Załóżmy `KEY="dev-key-123"` i masz `file.pdf`.
+Assume `KEY="dev-key-123"` and you have `file.pdf`.
 
-**1) Upload dokumentu**
+**1) Upload a document**
 
 ```bash
 curl -s -X POST http://localhost:8080/v1/documents/upload \
@@ -148,7 +146,7 @@ curl -s -X POST http://localhost:8080/v1/documents/upload \
 # => {"document_id":"<UUID>"}
 ```
 
-**2) Sprawdź status**
+**2) Check status**
 
 ```bash
 DOC="<UUID>"
@@ -156,14 +154,14 @@ curl -s "http://localhost:8080/v1/documents/$DOC/status" \
   -H "X-API-Key: $KEY"
 ```
 
-**3) (Opcjonalnie) Wymuś ingest**
+**3) (Optional) Force ingestion**
 
 ```bash
 curl -s -X POST "http://localhost:8080/v1/documents/$DOC/ingest" \
   -H "X-API-Key: $KEY"
 ```
 
-**4) Zapytanie RAG**
+**4) Ask a question (RAG)**
 
 ```bash
 curl -s -X POST http://localhost:8080/v1/chat/query \
@@ -171,7 +169,7 @@ curl -s -X POST http://localhost:8080/v1/chat/query \
   -d "{\"query\":\"Summarise key points\",\"top_k\":6}"
 ```
 
-**5) Debug top-K chunków**
+**5) Debug top-K chunks**
 
 ```bash
 curl -s "http://localhost:8080/v1/chunks/search?q=topic&top_k=5" \
@@ -209,81 +207,61 @@ CHUNK_SIZE=1000
 CHUNK_OVERLAP=150
 ```
 
-**Uwaga:**
+Notes:
 
-* Obraz DB w `compose.yaml` to `pgvector/pgvector:pg16` (rozszerzenie `vector` tworzone na starcie).
-* Indeks IVFFLAT `vector_cosine_ops` jest zakładany automatycznie (z `lists = 100`).
+* DB image in `compose.yaml` is `pgvector/pgvector:pg16` (the `vector` extension is created on startup).
+* An IVFFLAT `vector_cosine_ops` index is created automatically (`lists = 100`).
 
 ---
 
-## 🧠 RAG details
+## 🧠 RAG Details
 
-* **Chunking:** ok. `1000` znaków, overlap `150` (konfigurowalne)
+* **Chunking:** \~`1000` chars, overlap `150` (configurable)
 * **Embeddings:** `text-embedding-3-small` (dim `1536`)
-* **ANN retrieval:** kNN w pgvector (`cosine`)
-* **Answering:** chat LLM (domyślnie `gpt-4o-mini`) z **citations** (snippet + `document_id`, `chunk_index`)
-* **Guardrails:** prompt wymusza „odpowiadaj tylko z kontekstu, w razie braku – powiedz, że nie wiesz”
+* **ANN retrieval:** k-NN with cosine distance in pgvector
+* **Answering:** chat LLM (default `gpt-4o-mini`) with **citations** (snippet + `document_id`, `chunk_index`)
+* **Guardrails:** prompt instructs “answer only from context; otherwise say you don’t know”
 
 ---
 
-## 🧪 Testing
-
-Rekomendowane:
+## 🧪 Testing (recommended)
 
 * **pytest** – unit + e2e
-* **httpx** – testy API (ASGI)
-* **Fakes** dla embedding/LLM (żeby testy nie trafiały do chmury)
-* **Migracje**: inicjalizacja schematu przy starcie testów (możesz użyć osobnej instancji Postgresa lub tymczasowego vol ume)
-
-Przykryj:
-
-* parsowanie PDF/tekstów
-* chunking (rozmiar/overlap)
-* retrieval (zapytania → top-K)
-* ścieżka upload → ingest → query (e2e)
+* **httpx** – ASGI API tests
+* **Fakes** for embeddings/LLM to avoid external calls in CI
+* Cover: PDF/text parsing, chunking, retrieval, end-to-end upload → ingest → query
 
 ---
 
 ## 📊 Observability
 
-* **Structured logs** (JSON-friendly) z `request_id` (do rozbudowy)
-* (Nice-to-have) **Prometheus** metrics i **OpenTelemetry** traces (API → retrieval → LLM)
+* Structured logs (JSON-friendly) with `request_id` (ready for extension)
+* (Nice-to-have) **Prometheus** metrics & **OpenTelemetry** traces (API → retrieval → LLM)
 
 ---
 
 ## 🧭 Troubleshooting
 
-* `HTTP 500` przy query → sprawdź `OPENAI_API_KEY` i dostęp do modeli
-* `failed` status ingestu → upewnij się, że dokument ma tekst (skanowane PDFy wymagają OCR – patrz „Roadmap”)
-* Brak wektorów → upewnij się, że `CREATE EXTENSION vector` zostało wykonane (aplikacja robi to przy starcie)
-* Worker nie działa → ingest wykona się **synchronicznie** w procesie API (wolniej, ale nie blokuje demo)
+* `HTTP 500` on `/chat/query` → check `OPENAI_API_KEY` and model access
+* `status = failed` after ingest → the document may not contain extractable text (scanned PDFs need OCR)
+* No vectors stored → ensure `CREATE EXTENSION vector` ran (the app does this on startup)
+* Celery worker down → ingestion falls back to **synchronous** mode (slower but fine for demos)
 
 ---
 
-## 🗺️ Roadmap (nice-to-have)
+## 🗺️ Roadmap
 
-* 🔎 **Reranking** (HF cross-encoder / LLM re-rank)
-* ➕ **Query expansion** (multi-query)
-* 🧾 **Eval harness** (hit\@K, MRR, LLM-graded faithfulness)
-* 🏷️ **Multi-tenant** (`tenant_id` w każdej tabeli)
-* 🚦 **Rate limiting** (Redis) i audyt zapytań
-* 🧹 **OCR** (np. Tesseract/TrOCR) dla skanów PDF
-* 🔐 **Secret manager** i lepsze polityki PII
-* 📈 **Prometheus/Grafana**, **OTel** traces
-
----
-
-## ⚠️ Notes
-
-* Generowanie embeddingów i odpowiedzi korzysta z zewnętrznych modeli – pamiętaj o **kosztach** i limitach.
-* Ten projekt przechowuje tylko **tekst** i **embeddingi**; treści wrażliwe loguj ostrożnie.
+* 🔎 Reranking (HF cross-encoder / LLM re-rank)
+* ➕ Query expansion (multi-query)
+* 🧾 Eval harness (hit\@K, MRR, LLM-graded faithfulness)
+* 🏷️ Multi-tenant (`tenant_id` across tables)
+* 🚦 Rate limiting (Redis) & query audit
+* 🧹 OCR (e.g., Tesseract/TrOCR) for scanned PDFs
+* 🔐 Secret manager & PII redaction policies
+* 📈 Prometheus/Grafana, OpenTelemetry traces
 
 ---
 
 ## 📄 License
 
-MIT (jeśli chcesz, dodam plik `LICENSE`).
-
----
-
-Chcesz, żebym od razu podmieniła plik `README.md` w Twojej paczce i dorzuciła go do ZIPa pod nową nazwą projektu **ai-docs-assistant-api**?
+MIT (add a `LICENSE` file if desired).
